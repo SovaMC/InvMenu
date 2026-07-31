@@ -54,7 +54,9 @@ final class InvMenuEventHandler implements Listener{
 			// these are not magic numbers. 255 (windowId) is supposed to be ContainerIds::NONE (-1) but it appears
 			// either pocketmine or mojang wrongly encodes/decodes the packet. the same applies to 247 (windowType)
 			// which actually is WindowTypes::NONE (-9).
-			if(!$packet->server && $packet->windowId === 255 && $packet->windowType === 247){
+			// windowType is only sent by 1.21+ clients - the property is left uninitialized for anything older,
+			// where the window id alone identifies the close.
+			if(!$packet->server && $packet->windowId === 255 && (!isset($packet->windowType) || $packet->windowType === 247)){
 				$player = $event->getOrigin()->getPlayer();
 				if($player !== null && $this->player_manager->getNullable($player)?->dispatcher !== null){
 					$event->cancel();

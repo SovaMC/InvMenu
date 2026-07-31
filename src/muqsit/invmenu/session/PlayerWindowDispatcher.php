@@ -19,6 +19,7 @@ use pocketmine\network\mcpe\protocol\types\inventory\WindowTypes;
 use pocketmine\scheduler\ClosureTask;
 use pocketmine\scheduler\TaskHandler;
 use function assert;
+use function max;
 
 final class PlayerWindowDispatcher{
 
@@ -27,7 +28,11 @@ final class PlayerWindowDispatcher{
 	public const STATE_COMPLETED = 2;
 
 	private ?TaskHandler $task_handler = null;
+	private ?TaskHandler $timeout_handler = null;
 	private ?Closure $container_open_callback = null;
+
+	readonly private bool $acknowledges_windows;
+	private bool $window_sent = false;
 
 	private ?int $window_id = null;
 
@@ -48,17 +53,85 @@ final class PlayerWindowDispatcher{
 		readonly public PlayerSession $session,
 		readonly public InvMenuInfo $info,
 		public int $retry_timeo = 20, // ticks
-		public int $finalization_timeo = 20 // ticks
+		public int $finalization_timeo = 20, // ticks
+		public int $dispatch_timeo = 20 // ticks
 	){
+		$this->acknowledges_windows = $session->network->supportsWindowAcknowledgement();
 		$info->graphic->send($session->player, $info->graphic_name);
-		$session->network->waitUntil(PlayerNetwork::DELAY_TYPE_OPERATION, $info->graphic->getAnimationDuration(), function(bool $success) : void{
-			$success = $success && $this->registerContainerOpenCallbacks();
-			$success = $success && $this->info->graphic->sendInventory($this->session->player, $this->info->menu->getInventory());
-			if($success){
-				$this->session->current = $this->info;
-			}else{
-				$this->setResult(false);
+
+		// clients that do not acknowledge windows cannot have the window re-sent, so they must be given the time to
+		// process the graphic first - they silently refuse to open a window on a block they do not know about yet
+		$animation_duration = $info->graphic->getAnimationDuration();
+		if(!$this->acknowledges_windows){
+			$animation_duration = max($animation_duration, 1);
+		}
+
+		// a client that never answers our network stack latency request would otherwise hold up this dispatch, and
+		// with it every window that is dispatched after this one, indefinitely
+		$this->timeout_handler = InvMenuHandler::getRegistrant()->getScheduler()->scheduleDelayedTask(new ClosureTask($this->onDispatchTimedOut(...)), $this->dispatch_timeo);
+
+		$session->network->waitUntil(PlayerNetwork::DELAY_TYPE_OPERATION, $animation_duration, $this->onGraphicProcessed(...));
+	}
+
+	private function onGraphicProcessed(bool $success) : void{
+		if($this->window_sent || $this->result !== null){
+			return;
+		}
+
+		$this->window_sent = true;
+		if($this->acknowledges_windows){
+			// the retry loop takes over the responsibility of resolving this dispatch from here on
+			$this->timeout_handler?->cancel();
+			$this->timeout_handler = null;
+		}
+
+		if($success){
+			$this->openWindow(true);
+		}else{
+			$this->setResult(false);
+		}
+	}
+
+	private function onDispatchTimedOut() : void{
+		$this->timeout_handler = null;
+		if($this->result !== null){
+			return;
+		}
+
+		if(!$this->window_sent){
+			// the client did not answer our network stack latency request - marking the window as sent beforehand
+			// keeps the dropped request from reporting a failed dispatch
+			$this->window_sent = true;
+			$this->session->network->dropPending();
+			$this->openWindow(false);
+		}
+
+		if(!$this->acknowledges_windows && $this->result === null){
+			$this->setResult(true);
+		}
+	}
+
+	/**
+	 * @param bool $await_confirmation whether the client is expected to confirm having processed the window. Only
+	 * applies to clients that do not acknowledge windows - windows sent to the rest are confirmed by acknowledgement.
+	 */
+	private function openWindow(bool $await_confirmation) : void{
+		if(!$this->registerContainerOpenCallbacks() || !$this->info->graphic->sendInventory($this->session->player, $this->info->menu->getInventory())){
+			$this->setResult(false);
+			return;
+		}
+
+		$this->session->current = $this->info;
+		if($this->acknowledges_windows || !$await_confirmation){
+			return;
+		}
+
+		// no acknowledgement is coming - the dispatch completes as soon as the client has processed the window
+		$this->session->network->wait(PlayerNetwork::DELAY_TYPE_OPERATION, function(bool $success) : bool{
+			if($this->result === null){
+				$this->setResult($success);
 			}
+			return false;
 		});
 	}
 
@@ -98,7 +171,11 @@ final class PlayerWindowDispatcher{
 
 			$this->window_id = $window_id;
 			$this->packets = $packets;
-			$this->task_handler = InvMenuHandler::getRegistrant()->getScheduler()->scheduleRepeatingTask(new ClosureTask($this->run(...)), 1);
+			if($this->acknowledges_windows){
+				// re-sending the window to a client that does not acknowledge windows would close the one it just
+				// opened once every tick, leaving the player with no window at all
+				$this->task_handler = InvMenuHandler::getRegistrant()->getScheduler()->scheduleRepeatingTask(new ClosureTask($this->run(...)), 1);
+			}
 			return $packets;
 		};
 		// Take priority over other container open callbacks.
@@ -132,6 +209,8 @@ final class PlayerWindowDispatcher{
 		}
 		$this->task_handler?->cancel();
 		$this->task_handler = null;
+		$this->timeout_handler?->cancel();
+		$this->timeout_handler = null;
 		if($this->session->player->isConnected()){
 			$manager = $this->session->player->getNetworkSession()->getInvManager();
 			if($this->container_open_callback !== null){
@@ -177,6 +256,8 @@ final class PlayerWindowDispatcher{
 		}
 		$this->task_handler?->cancel();
 		$this->task_handler = null;
+		$this->timeout_handler?->cancel();
+		$this->timeout_handler = null;
 		$this->state = self::STATE_COMPLETED;
 		$this->n_finalization_acks = 0;
 		if($this->session->dispatcher === $this){

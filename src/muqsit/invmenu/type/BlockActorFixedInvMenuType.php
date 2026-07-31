@@ -36,7 +36,7 @@ final class BlockActorFixedInvMenuType implements FixedInvMenuType{
 	public function createGraphic(InvMenu $menu, Player $player) : ?InvMenuGraphic{
 		$position = $player->getPosition();
 		$origin = $position->addVector(InvMenuTypeHelper::getBehindPositionOffset())->floor();
-		if(!InvMenuTypeHelper::isValidYCoordinate($origin->y)){
+		if(!InvMenuTypeHelper::isValidYCoordinate($origin->y, $player->getNetworkSession()->getProtocolId())){
 			return null;
 		}
 

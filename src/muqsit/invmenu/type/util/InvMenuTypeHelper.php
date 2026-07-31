@@ -8,6 +8,7 @@ use Generator;
 use pocketmine\block\tile\Chest;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\world\World;
 
 final class InvMenuTypeHelper{
@@ -15,12 +16,19 @@ final class InvMenuTypeHelper{
 	public const NETWORK_WORLD_Y_MIN = -64;
 	public const NETWORK_WORLD_Y_MAX = 320;
 
+	public const LEGACY_NETWORK_WORLD_Y_MIN = 0;
+	public const LEGACY_NETWORK_WORLD_Y_MAX = 255;
+
 	public static function getBehindPositionOffset() : Vector3{
 		return new Vector3(0, -2, 0);
 	}
 
-	public static function isValidYCoordinate(float $y) : bool{
-		return $y >= self::NETWORK_WORLD_Y_MIN && $y <= self::NETWORK_WORLD_Y_MAX;
+	public static function isValidYCoordinate(float $y, int $protocolId = ProtocolInfo::CURRENT_PROTOCOL) : bool{
+		// worlds were not extended past the 0-255 range until 1.18 - a block sent outside of the range the client
+		// knows about is discarded by it, leaving the graphic invisible and the window unopenable
+		return $protocolId >= ProtocolInfo::PROTOCOL_1_18_0 ?
+			$y >= self::NETWORK_WORLD_Y_MIN && $y <= self::NETWORK_WORLD_Y_MAX :
+			$y >= self::LEGACY_NETWORK_WORLD_Y_MIN && $y <= self::LEGACY_NETWORK_WORLD_Y_MAX;
 	}
 
 	/**

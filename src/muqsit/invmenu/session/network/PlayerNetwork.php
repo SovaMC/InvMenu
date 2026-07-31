@@ -31,6 +31,10 @@ final class PlayerNetwork{
 		$this->dropPending();
 	}
 
+	public function supportsWindowAcknowledgement() : bool{
+		return $this->handler->supportsWindowAcknowledgement($this->network_session->getProtocolId());
+	}
+
 	public function dropPending() : void{
 		foreach($this->queue as $entry){
 			($entry->then)(false);
