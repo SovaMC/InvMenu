@@ -1,5 +1,5 @@
 {
-	"name": "nethergamesmc/invmenu",
+	"name": "sovamc/invmenu",
 	"description": "A PocketMine-MP virion to create and manage virtual inventories!",
 	"license": "proprietary",
 	"type": "project",
@@ -8,10 +8,10 @@
 	},
 	"require-dev": {
 		"phpstan/phpstan": "1.2.0",
-		"nethergamesmc/pocketmine-mp": "dev-stable"
+		"lunarixbe/dummy": "main"
 	},
 	"repositories": [
-		{ "type": "vcs", "url": "git@github.com:NetherGamesMC/PocketMine-MP.git" }
+		{ "type": "vcs", "url": "git@github.com:LunarixBE/dummy.git" }
 	],
 	"autoload": {
 		"classmap": ["src"]
