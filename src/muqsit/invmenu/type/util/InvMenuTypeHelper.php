@@ -19,6 +19,8 @@ final class InvMenuTypeHelper{
 	public const LEGACY_NETWORK_WORLD_Y_MIN = 0;
 	public const LEGACY_NETWORK_WORLD_Y_MAX = 255;
 
+	private const PROTOCOL_1_18_0 = 475;
+
 	public static function getBehindPositionOffset() : Vector3{
 		return new Vector3(0, -2, 0);
 	}
@@ -26,7 +28,7 @@ final class InvMenuTypeHelper{
 	public static function isValidYCoordinate(float $y, int $protocolId = ProtocolInfo::CURRENT_PROTOCOL) : bool{
 		// worlds were not extended past the 0-255 range until 1.18 - a block sent outside of the range the client
 		// knows about is discarded by it, leaving the graphic invisible and the window unopenable
-		return $protocolId >= ProtocolInfo::PROTOCOL_1_18_0 ?
+		return $protocolId >= self::PROTOCOL_1_18_0 ?
 			$y >= self::NETWORK_WORLD_Y_MIN && $y <= self::NETWORK_WORLD_Y_MAX :
 			$y >= self::LEGACY_NETWORK_WORLD_Y_MIN && $y <= self::LEGACY_NETWORK_WORLD_Y_MAX;
 	}
